@@ -1,5 +1,7 @@
 # IDForge
 
+![idforge_logo](https://github.com/user-attachments/assets/e1c9fe32-3231-4f65-be8b-91b259245f55)
+
 IDForge – Identity Management and Replication Platform
 IDForge is a modular platform designed for identity management and synchronization across various systems. Built for heterogeneous environments, it provides a flexible approach without requiring a common key between systems.
 
