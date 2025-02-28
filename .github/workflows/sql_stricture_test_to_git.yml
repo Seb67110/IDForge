@@ -1,4 +1,4 @@
-name: Commit MySQL Structure
+name: MySQL Structure Test to Git
 
 on:
   workflow_dispatch:
