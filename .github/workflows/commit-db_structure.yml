@@ -25,7 +25,7 @@ jobs:
         MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
       run: |
         mkdir -p sql
-        mysqldump -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD --no-data --routines --triggers $MYSQL_DATABASE > sql/structure.sql
+        mysqldump -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD --no-data --routines --triggers $MYSQL_DATABASE > sql/System_Structure.sql
 
     - name: Check for Changes
       run: |
