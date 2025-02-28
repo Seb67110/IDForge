@@ -1,0 +1,56 @@
+name: Commit MySQL Structure
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_message:
+        description: "Describe the changes made"
+        required: true
+        default: "MySQL structure update from test"
+
+permissions:
+  contents: write
+
+jobs:
+  export-mysql-structure:
+    runs-on: idforge-test
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Debug Runner Directory
+      run: |
+        echo "Working Directory: $(pwd)"
+        echo "Home Directory: $HOME"
+        ls -l
+
+    - name: Export MySQL Structure
+      env:
+        MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+        MYSQL_USER: ${{ secrets.MYSQL_USER }}
+        MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+        MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+      run: |
+        mkdir -p sql
+        mysqldump -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD --no-data --routines --triggers $MYSQL_DATABASE > sql/System_Structure.sql
+        ls -l sql/
+
+    - name: Check for Changes
+      run: |
+        git add sql/System_Structure.sql
+        if git diff --staged --quiet; then
+          echo "No changes detected, skipping commit."
+          exit 0
+        fi
+
+    - name: Commit and Push Changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COMMIT_MSG: ${{ github.event.inputs.commit_message }}
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add sql/System_Structure.sql
+        git commit -m "$COMMIT_MSG" || echo "No changes to commit"
+        git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git main
