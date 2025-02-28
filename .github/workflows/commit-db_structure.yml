@@ -29,7 +29,7 @@ jobs:
 
     - name: Check for Changes
       run: |
-        git add sql/structure.sql
+        git add sql/System_Structure.sql
         if git diff --staged --quiet; then
           echo "No changes detected, skipping commit."
           exit 0
