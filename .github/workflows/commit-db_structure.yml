@@ -9,6 +9,9 @@ on:
         required: true
         default: "MySQL structure update"
 
+permissions:
+  contents: write
+
 jobs:
   export-mysql-structure:
     runs-on: self-hosted
