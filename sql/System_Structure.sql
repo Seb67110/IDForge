@@ -208,12 +208,32 @@ DROP TABLE IF EXISTS `Session`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `Session` (
-  `user` int NOT NULL,
   `sessionHash` varchar(64) NOT NULL,
-  `blurredUser` varchar(36) NOT NULL,
+  `user` int NOT NULL,
   `openedOn` timestamp NULL DEFAULT NULL,
   `lastUsedOn` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`user`,`sessionHash`)
+  PRIMARY KEY (`sessionHash`),
+  UNIQUE KEY `sessionHash_UNIQUE` (`sessionHash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `SessionKey`
+--
+
+DROP TABLE IF EXISTS `SessionKey`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `SessionKey` (
+  `session_id` varchar(45) NOT NULL,
+  `tabId` varchar(45) NOT NULL,
+  `type` varchar(45) NOT NULL,
+  `form` varchar(45) NOT NULL,
+  `field` varchar(45) NOT NULL,
+  `blurredKey` varchar(45) NOT NULL,
+  `realKey` varchar(45) NOT NULL,
+  PRIMARY KEY (`session_id`,`tabId`),
+  CONSTRAINT `fk_SessionKey_Session` FOREIGN KEY (`session_id`) REFERENCES `Session` (`sessionHash`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -628,6 +648,209 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `Session_GetKey` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`sebastien.schnepp`@`%` PROCEDURE `Session_GetKey`(
+    IN p_token VARCHAR(255),  	-- Input token provided by the user
+    IN p_tabId VARCHAR(45),   	-- Tab identifier
+    IN p_type VARCHAR(45),    	-- Type of the session key
+    IN p_form VARCHAR(45),    	-- Form identifier
+    IN p_field VARCHAR(45),   	-- Field identifier
+    IN p_blurredKey VARCHAR(45) -- Blurred key to be resolved
+)
+BEGIN
+    DECLARE v_session_id VARCHAR(64);
+    DECLARE v_realKey VARCHAR(45);
+
+    -- Compute SHA-256 hash of the token to retrieve session_id
+    SET v_session_id = SHA2(p_token, 256);
+
+    -- Retrieve the real key associated with the given parameters
+    SELECT realKey 
+    INTO v_realKey
+    FROM SessionKey
+    WHERE session_id = v_session_id
+      AND tabId = p_tabId
+      AND type = p_type
+      AND form = p_form
+      AND field = p_field
+      AND blurredKey = p_blurredKey
+    LIMIT 1;
+
+    -- Return the real key (NULL if not found)
+    SELECT v_realKey AS realKey;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `Session_GetUser` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`sebastien.schnepp`@`%` PROCEDURE `Session_GetUser`(
+    IN p_token VARCHAR(255)
+)
+BEGIN
+    DECLARE v_sessionHash CHAR(64);
+    DECLARE v_user VARCHAR(255);
+    DECLARE v_expiration_threshold DATETIME;
+    
+    -- Define expiration threshold (e.g., sessions older than 1 hour are invalid)
+    SET v_expiration_threshold = NOW() - INTERVAL 1 HOUR;
+    
+    -- Compute SHA-256 hash of the provided token
+    SET v_sessionHash = SHA2(p_token, 256);
+    
+    -- Delete expired sessions
+    CREATE TEMPORARY TABLE tmp_sessions AS 
+	SELECT sessionHash FROM Session WHERE lastUsedOn < v_expiration_threshold;
+
+	DELETE FROM Session WHERE sessionHash IN (SELECT sessionHash FROM tmp_sessions);
+
+	DROP TEMPORARY TABLE tmp_sessions;
+
+    -- Retrieve user associated with the valid session
+    SELECT `user`
+    INTO v_user
+    FROM Session
+    WHERE sessionHash = v_sessionHash;
+    
+    -- If a valid session is found, update lastUsedOn
+    IF v_user IS NOT NULL THEN
+    UPDATE Session 
+		SET lastUsedOn = NOW() 
+		WHERE sessionHash = v_sessionHash;
+    END IF;
+    
+    -- Return the user
+    SELECT v_user AS user;
+    
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `Session_ResetKeys` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`sebastien.schnepp`@`%` PROCEDURE `Session_ResetKeys`(
+    IN p_token VARCHAR(255),  -- Input token provided by the user
+    IN p_tabId VARCHAR(45)    -- Tab identifier
+)
+BEGIN
+    DECLARE v_session_id VARCHAR(64);
+
+    -- Compute SHA-256 hash of the token to retrieve session_id
+    SET v_session_id = SHA2(p_token, 256);
+
+    -- Delete all entries matching the given session and tabId
+    DELETE FROM SessionKey
+    WHERE session_id = v_session_id
+      AND tabId = p_tabId;
+      
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `Session_SetKey` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`sebastien.schnepp`@`%` PROCEDURE `Session_SetKey`(
+    IN p_token VARCHAR(255),  		-- Input token provided by the user
+    IN p_tabId VARCHAR(45),   		-- Tab identifier
+    IN p_type VARCHAR(45),    		-- Type of the session key
+    IN p_form VARCHAR(45),    		-- Form identifier
+    IN p_field VARCHAR(45),   		-- Field identifier
+    IN p_blurredKey VARCHAR(45), 	-- Blurred key to be resolved
+    IN p_realKey VARCHAR(45)  		-- The real key to be stored
+)
+BEGIN
+    DECLARE v_session_id VARCHAR(64);
+
+    -- Compute SHA-256 hash of the token to retrieve session_id
+    SET v_session_id = SHA2(p_token, 256);
+
+    -- Insert or update the session key mapping
+    INSERT INTO SessionKey (session_id, tabId, type, form, field, blurredKey, realKey)
+    VALUES (v_session_id, p_tabId, p_type, p_form, p_field, p_blurredKey, p_realKey)
+    ON DUPLICATE KEY UPDATE 
+        realKey = p_realKey;
+        
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `Session_Start` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`sebastien.schnepp`@`%` PROCEDURE `Session_Start`(
+    IN p_user VARCHAR(255)
+)
+BEGIN
+    DECLARE v_token VARCHAR(512);
+    DECLARE v_sessionHash CHAR(64);
+    
+    -- Generate a random 512-character token
+    SET v_token = CONCAT(UUID(), UUID(), UUID(), UUID());
+    
+    -- Compute SHA-256 hash of the token
+    SET v_sessionHash = SHA2(v_token, 256);
+    
+    -- Insert new session
+    INSERT INTO Session (sessionHash, `user`, openedOn, lastUsedOn)
+    VALUES (v_sessionHash, p_user, NOW(), NOW());
+    
+    -- Return the token to the user
+    SELECT v_token AS token;
+    
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -638,4 +861,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-02-28 23:05:31
+-- Dump completed on 2025-03-01 14:43:09
