@@ -1,0 +1,68 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww20560\viewh21460\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 using namespace System.Collections.Concurrent\
+\
+class QueueHandler \{\
+    # Tableau associatif pour stocker les files d'attente\
+    [ConcurrentDictionary[string, ConcurrentQueue[string]]] $Queues\
+    # Verrous pour chaque file d'attente\
+    [ConcurrentDictionary[string, object]] $Locks\
+    # Dictionnaire pour stocker les horodatages de d\'e9but d'ex\'e9cution\
+    [ConcurrentDictionary[string, datetime]] $StartTimes\
+\
+    # Constructeur\
+    QueueHandler() \{\
+        $this.Queues = [ConcurrentDictionary[string, ConcurrentQueue[string]]]::new()\
+        $this.Locks = [ConcurrentDictionary[string, object]]::new()\
+        $this.StartTimes = [ConcurrentDictionary[string, datetime]]::new()\
+    \}\
+\
+    # M\'e9thode pour attendre le tour d'ex\'e9cution dans une file d'attente sp\'e9cifique\
+    WaitTurn([string] $queueName, [string] $sessionId) \{\
+        lock ($this.Locks.GetOrAdd($queueName, \{ New-Object object \})) \{\
+            # V\'e9rifie si la file d'attente existe, sinon la cr\'e9e\
+            if (-not $this.Queues.ContainsKey($queueName)) \{\
+                $this.Queues[$queueName] = [ConcurrentQueue[string]]::new()\
+            \}\
+\
+            $queue = $this.Queues[$queueName]\
+\
+            # Ajoute le processus \'e0 la file d'attente avec son sessionId comme identifiant unique\
+            $queue.Enqueue($sessionId)\
+            $this.StartTimes[$sessionId] = [datetime]::Now\
+        \}\
+\
+        # Attente du tour dans la file d'attente\
+        while ($sessionId -ne $queue.Peek() -or (New-TimeSpan -Start $this.StartTimes[$sessionId]).TotalSeconds -ge 10) \{\
+            Start-Sleep -Milliseconds 100\
+            if ($queue.Count -eq 0) \{\
+                return\
+            \}\
+        \}\
+\
+        # Si le processus a attendu son tour, mais n'a pas appel\'e9 EndTurn dans les 10 secondes, il est supprim\'e9\
+        if ((New-TimeSpan -Start $this.StartTimes[$sessionId]).TotalSeconds -ge 10) \{\
+            $this.EndTurn($queueName, $sessionId)\
+        \}\
+    \}\
+\
+    # M\'e9thode pour marquer la fin du tour d'ex\'e9cution\
+    [void] EndTurn([string] $queueName, [string] $sessionId) \{\
+        lock ($this.Locks.GetOrAdd($queueName, \{ New-Object object \})) \{\
+            $queue = $this.Queues[$queueName]\
+\
+            # Si le sessionId est le prochain \'e0 \'eatre trait\'e9, le processus a r\'e9ussi\
+            if ($sessionId -eq $queue.Peek()) \{\
+                # Et on retire le prochain processus de la file\
+                $queue.TryDequeue([ref]$null) | Out-Null\
+                $this.StartTimes.Remove($sessionId)\
+            \}\
+        \}\
+    \}\
+\}\
+}
